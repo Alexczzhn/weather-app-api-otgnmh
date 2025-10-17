@@ -1,6 +1,7 @@
+
 import "react-native-reanimated";
-import React, { useEffect } from "react";
-import { useFonts } from "expo-font";
+import React, { useEffect, useState } from "react";
+import { useFonts, Satisfy_400Regular } from '@expo-google-fonts/satisfy';
 import { Stack, router } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { SystemBars } from "react-native-edge-to-edge";
@@ -16,6 +17,7 @@ import {
 import { StatusBar } from "expo-status-bar";
 import { Button } from "@/components/button";
 import { WidgetProvider } from "@/contexts/WidgetContext";
+import LoadingScreen from "@/components/LoadingScreen";
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -27,15 +29,36 @@ export const unstable_settings = {
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const networkState = useNetworkState();
-  const [loaded] = useFonts({
+  const [isAppReady, setIsAppReady] = useState(false);
+  
+  const [fontsLoaded] = useFonts({
     SpaceMono: require("../assets/fonts/SpaceMono-Regular.ttf"),
+    Satisfy_400Regular,
   });
 
   useEffect(() => {
-    if (loaded) {
+    async function prepare() {
+      try {
+        // Simulate loading weather data and other resources
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        console.log('App resources loaded');
+      } catch (e) {
+        console.warn('Error loading app resources:', e);
+      } finally {
+        setIsAppReady(true);
+      }
+    }
+
+    if (fontsLoaded) {
+      prepare();
+    }
+  }, [fontsLoaded]);
+
+  useEffect(() => {
+    if (fontsLoaded && isAppReady) {
       SplashScreen.hideAsync();
     }
-  }, [loaded]);
+  }, [fontsLoaded, isAppReady]);
 
   React.useEffect(() => {
     if (
@@ -49,8 +72,8 @@ export default function RootLayout() {
     }
   }, [networkState.isConnected, networkState.isInternetReachable]);
 
-  if (!loaded) {
-    return null;
+  if (!fontsLoaded || !isAppReady) {
+    return <LoadingScreen />;
   }
 
   const CustomDefaultTheme: Theme = {
@@ -77,6 +100,7 @@ export default function RootLayout() {
       notification: "rgb(255, 69, 58)", // System Red (Dark Mode)
     },
   };
+  
   return (
     <>
       <StatusBar style="auto" animated />

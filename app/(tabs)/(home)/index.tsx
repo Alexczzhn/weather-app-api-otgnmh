@@ -1,46 +1,90 @@
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Stack } from "expo-router";
-import { ScrollView, Pressable, StyleSheet, View, Text, Platform } from "react-native";
+import { ScrollView, Pressable, StyleSheet, View, Text, Platform, Alert, ActivityIndicator } from "react-native";
 import { IconSymbol } from "@/components/IconSymbol";
 import { useTheme } from "@react-navigation/native";
 import { colors } from "@/styles/commonStyles";
 import { LinearGradient } from "expo-linear-gradient";
+import {
+  fetchWeatherByCity,
+  fetchHourlyForecast,
+  fetchDailyForecast,
+  getMockWeatherData,
+  getMockHourlyForecast,
+  getMockDailyForecast,
+  WeatherData,
+  HourlyForecast,
+  DailyForecast,
+} from "@/services/weatherService";
 
 export default function HomeScreen() {
   const theme = useTheme();
   const [unit, setUnit] = useState<'C' | 'F'>('C');
+  const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
+  const [hourlyForecast, setHourlyForecast] = useState<HourlyForecast[]>([]);
+  const [dailyForecast, setDailyForecast] = useState<DailyForecast[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Mock weather data
-  const weatherData = {
-    location: "San Francisco",
-    country: "United States",
-    temperature: unit === 'C' ? 22 : 72,
-    feelsLike: unit === 'C' ? 20 : 68,
-    condition: "Partly Cloudy",
-    description: "Expect partly cloudy skies throughout the day",
-    humidity: 65,
-    windSpeed: 12,
-    pressure: 1013,
-    visibility: 10,
-    uvIndex: 6,
-    sunrise: "6:42 AM",
-    sunset: "7:28 PM",
-    hourlyForecast: [
-      { time: "Now", temp: unit === 'C' ? 22 : 72, icon: "cloud.sun.fill" },
-      { time: "2 PM", temp: unit === 'C' ? 24 : 75, icon: "sun.max.fill" },
-      { time: "3 PM", temp: unit === 'C' ? 25 : 77, icon: "sun.max.fill" },
-      { time: "4 PM", temp: unit === 'C' ? 24 : 75, icon: "cloud.sun.fill" },
-      { time: "5 PM", temp: unit === 'C' ? 23 : 73, icon: "cloud.fill" },
-      { time: "6 PM", temp: unit === 'C' ? 21 : 70, icon: "cloud.moon.fill" },
-    ],
-    weeklyForecast: [
-      { day: "Mon", high: unit === 'C' ? 25 : 77, low: unit === 'C' ? 18 : 64, icon: "sun.max.fill" },
-      { day: "Tue", high: unit === 'C' ? 23 : 73, low: unit === 'C' ? 17 : 63, icon: "cloud.sun.fill" },
-      { day: "Wed", high: unit === 'C' ? 21 : 70, low: unit === 'C' ? 16 : 61, icon: "cloud.rain.fill" },
-      { day: "Thu", high: unit === 'C' ? 22 : 72, low: unit === 'C' ? 17 : 63, icon: "cloud.fill" },
-      { day: "Fri", high: unit === 'C' ? 24 : 75, low: unit === 'C' ? 18 : 64, icon: "sun.max.fill" },
-    ],
+  useEffect(() => {
+    loadWeatherData();
+  }, [unit]);
+
+  const loadWeatherData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      console.log('Loading weather data...');
+
+      // Try to fetch real data for Nairobi, Kenya (default location)
+      const weather = await fetchWeatherByCity('Nairobi,KE', unit);
+      
+      if (weather) {
+        setWeatherData(weather);
+        
+        // Fetch forecasts
+        const hourly = await fetchHourlyForecast(weather.lat, weather.lon, unit);
+        const daily = await fetchDailyForecast(weather.lat, weather.lon, unit);
+        
+        setHourlyForecast(hourly.length > 0 ? hourly : getMockHourlyForecast(unit));
+        setDailyForecast(daily.length > 0 ? daily : getMockDailyForecast(unit));
+      } else {
+        // Use mock data if API fails
+        console.log('Using mock data - API key may not be configured');
+        setWeatherData(getMockWeatherData(unit));
+        setHourlyForecast(getMockHourlyForecast(unit));
+        setDailyForecast(getMockDailyForecast(unit));
+        setError('Using demo data. Configure API key for live weather.');
+      }
+    } catch (err) {
+      console.error('Error loading weather:', err);
+      setError('Failed to load weather data');
+      // Use mock data as fallback
+      setWeatherData(getMockWeatherData(unit));
+      setHourlyForecast(getMockHourlyForecast(unit));
+      setDailyForecast(getMockDailyForecast(unit));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getWeatherIcon = (condition: string): string => {
+    const conditionLower = condition.toLowerCase();
+    if (conditionLower.includes('clear') || conditionLower.includes('sunny')) {
+      return 'sun.max.fill';
+    } else if (conditionLower.includes('cloud')) {
+      return 'cloud.sun.fill';
+    } else if (conditionLower.includes('rain')) {
+      return 'cloud.rain.fill';
+    } else if (conditionLower.includes('storm') || conditionLower.includes('thunder')) {
+      return 'cloud.bolt.fill';
+    } else if (conditionLower.includes('snow')) {
+      return 'snow';
+    } else if (conditionLower.includes('fog') || conditionLower.includes('mist')) {
+      return 'cloud.fog.fill';
+    }
+    return 'cloud.sun.fill';
   };
 
   const renderHeaderRight = () => (
@@ -51,6 +95,27 @@ export default function HomeScreen() {
       <Text style={[styles.unitText, { color: colors.primary }]}>°{unit}</Text>
     </Pressable>
   );
+
+  if (loading) {
+    return (
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.loadingText}>Loading weather data...</Text>
+      </View>
+    );
+  }
+
+  if (!weatherData) {
+    return (
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+        <IconSymbol name="exclamationmark.triangle.fill" size={48} color={colors.accent} />
+        <Text style={styles.errorText}>Unable to load weather data</Text>
+        <Pressable onPress={loadWeatherData} style={styles.retryButton}>
+          <Text style={styles.retryButtonText}>Retry</Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   return (
     <>
@@ -71,6 +136,14 @@ export default function HomeScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
+        {/* Error Banner */}
+        {error && (
+          <View style={styles.errorBanner}>
+            <IconSymbol name="info.circle.fill" size={16} color={colors.accent} />
+            <Text style={styles.errorBannerText}>{error}</Text>
+          </View>
+        )}
+
         {/* Location Header */}
         <View style={styles.locationHeader}>
           <IconSymbol name="location.fill" size={20} color={colors.primary} />
@@ -86,30 +159,37 @@ export default function HomeScreen() {
             end={{ x: 1, y: 1 }}
             style={styles.gradientCard}
           >
-            <IconSymbol name="cloud.sun.fill" size={80} color="#FFFFFF" />
+            <IconSymbol 
+              name={getWeatherIcon(weatherData.condition) as any} 
+              size={80} 
+              color="#FFFFFF" 
+            />
             <Text style={styles.temperature}>{weatherData.temperature}°</Text>
             <Text style={styles.condition}>{weatherData.condition}</Text>
             <Text style={styles.feelsLike}>Feels like {weatherData.feelsLike}°</Text>
+            <Text style={styles.description}>{weatherData.description}</Text>
           </LinearGradient>
         </View>
 
         {/* Hourly Forecast */}
-        <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Hourly Forecast</Text>
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false}
-            style={styles.hourlyScroll}
-          >
-            {weatherData.hourlyForecast.map((hour, index) => (
-              <View key={index} style={styles.hourlyCard}>
-                <Text style={styles.hourlyTime}>{hour.time}</Text>
-                <IconSymbol name={hour.icon as any} size={32} color={colors.primary} />
-                <Text style={styles.hourlyTemp}>{hour.temp}°</Text>
-              </View>
-            ))}
-          </ScrollView>
-        </View>
+        {hourlyForecast.length > 0 && (
+          <View style={styles.sectionContainer}>
+            <Text style={styles.sectionTitle}>Hourly Forecast</Text>
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false}
+              style={styles.hourlyScroll}
+            >
+              {hourlyForecast.map((hour, index) => (
+                <View key={index} style={styles.hourlyCard}>
+                  <Text style={styles.hourlyTime}>{hour.time}</Text>
+                  <IconSymbol name={hour.icon as any} size={32} color={colors.primary} />
+                  <Text style={styles.hourlyTemp}>{hour.temp}°</Text>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        )}
 
         {/* Weather Details Grid */}
         <View style={styles.sectionContainer}>
@@ -149,18 +229,30 @@ export default function HomeScreen() {
         </View>
 
         {/* Weekly Forecast */}
-        <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>7-Day Forecast</Text>
-          {weatherData.weeklyForecast.map((day, index) => (
-            <View key={index} style={styles.weeklyCard}>
-              <Text style={styles.weeklyDay}>{day.day}</Text>
-              <IconSymbol name={day.icon as any} size={28} color={colors.primary} />
-              <View style={styles.weeklyTempContainer}>
-                <Text style={styles.weeklyHigh}>{day.high}°</Text>
-                <Text style={styles.weeklyLow}>{day.low}°</Text>
+        {dailyForecast.length > 0 && (
+          <View style={styles.sectionContainer}>
+            <Text style={styles.sectionTitle}>5-Day Forecast</Text>
+            {dailyForecast.map((day, index) => (
+              <View key={index} style={styles.weeklyCard}>
+                <Text style={styles.weeklyDay}>{day.day}</Text>
+                <IconSymbol name={day.icon as any} size={28} color={colors.primary} />
+                <View style={styles.weeklyTempContainer}>
+                  <Text style={styles.weeklyHigh}>{day.high}°</Text>
+                  <Text style={styles.weeklyLow}>{day.low}°</Text>
+                </View>
               </View>
-            </View>
-          ))}
+            ))}
+          </View>
+        )}
+
+        {/* API Info */}
+        <View style={styles.apiInfo}>
+          <Text style={styles.apiInfoText}>
+            💡 To get live weather data for all countries worldwide, add your OpenWeatherMap API key in services/weatherService.ts
+          </Text>
+          <Text style={styles.apiInfoSubtext}>
+            Free tier includes weather for 200,000+ cities including all of Kenya
+          </Text>
         </View>
       </ScrollView>
     </>
@@ -177,6 +269,49 @@ const styles = StyleSheet.create({
   },
   scrollContentWithTabBar: {
     paddingBottom: 100,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: colors.textSecondary,
+  },
+  errorText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: colors.text,
+    textAlign: 'center',
+  },
+  retryButton: {
+    marginTop: 20,
+    backgroundColor: colors.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  errorBanner: {
+    backgroundColor: colors.accent + '20',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  errorBannerText: {
+    flex: 1,
+    fontSize: 12,
+    color: colors.text,
   },
   headerButtonContainer: {
     padding: 8,
@@ -230,6 +365,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: 'rgba(255, 255, 255, 0.8)',
     marginTop: 4,
+  },
+  description: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.7)',
+    marginTop: 8,
+    textAlign: 'center',
   },
   sectionContainer: {
     marginBottom: 24,
@@ -322,5 +463,23 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
     color: colors.textSecondary,
+  },
+  apiInfo: {
+    backgroundColor: colors.primary + '15',
+    borderRadius: 16,
+    padding: 16,
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  apiInfoText: {
+    fontSize: 13,
+    color: colors.text,
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  apiInfoSubtext: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 18,
   },
 });
